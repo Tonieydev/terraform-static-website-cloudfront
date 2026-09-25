@@ -3,7 +3,6 @@
 ## Overview
 Production-pattern static site hosting on AWS: a private S3 bucket serves content exclusively through CloudFront, with public bucket access fully blocked and access restricted to CloudFront via Origin Access Control (OAC). Provisioned entirely with Terraform.
 
-**Live demo:** `https://d3c590ddzlgrqt.cloudfront.net`
 
 ## Architecture
 
