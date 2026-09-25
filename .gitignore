@@ -1,0 +1,22 @@
+# Terraform state (contains resource IDs/secrets — never commit)
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Terraform working directory
+.terraform/
+.terraform.lock.hcl
+
+# Variable files (often contain account-specific or sensitive values)
+*.tfvars
+*.tfvars.json
+!terraform.tfvars.example
+
+# Crash logs
+crash.log
+crash.*.log
+
+# OS/editor junk
+.DS_Store
+Thumbs.db
+.vscode/
