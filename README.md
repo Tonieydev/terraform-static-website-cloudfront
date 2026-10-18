@@ -3,6 +3,17 @@
 ## Overview
 Production-pattern static site hosting on AWS: a private S3 bucket serves content exclusively through CloudFront, with public bucket access fully blocked and access restricted to CloudFront via Origin Access Control (OAC). Provisioned entirely with Terraform.
 
+## What This Solves
+
+Hosting a static site on AWS looks simple, but the quickest way to do it is also the least safe and the slowest for users:
+
+- **Public buckets are a leading cause of data leaks.** The common tutorial approach is to make the bucket public and turn on S3 website hosting. Every object becomes readable by anyone with the URL, and one wrong policy edit later can expose files that were never meant to be shared.
+- **No HTTPS on S3 website endpoints.** S3's website endpoint serves HTTP only. Browsers mark the site "Not secure", and modern features that need a secure context won't work.
+- **Slow for distant users.** A bucket lives in one region. A visitor on another continent fetches every file across the world on every request.
+- **Every request hits the bucket.** Without a cache in front, all traffic goes straight to S3, which costs more and gives no protection against traffic spikes.
+- **Manual uploads drift.** Uploading files by hand through the console makes it easy to forget a file, set the wrong content type (so CSS or JS doesn't load), or lose track of what's deployed.
+
+This project keeps the bucket fully private, serves the site over HTTPS from CloudFront's global edge network with caching, and manages both the infrastructure and the site files in Terraform, so a single `terraform apply` deploys everything with correct content types.
 
 ## Architecture
 
@@ -55,6 +66,35 @@ Any file added, removed, or changed under `www/` is picked up automatically by t
 ```bash
 aws cloudfront create-invalidation --distribution-id <ID> --paths "/*"
 ```
+
+## Design Decisions
+
+**Why CloudFront in front of S3 instead of S3 website hosting alone:**
+S3's website endpoint serves HTTP only and requires the bucket to be public. CloudFront provides HTTPS, caches content at edge locations close to users, and absorbs traffic so most requests never reach the bucket. It also lets the bucket stay completely private, which S3 website hosting cannot do.
+
+**Why Origin Access Control instead of Origin Access Identity:**
+OAI is AWS's legacy mechanism for letting CloudFront read a private bucket. OAC is its replacement and the one AWS recommends for new distributions: it signs every request with SigV4, works in all regions, and supports buckets encrypted with SSE-KMS, which OAI does not. Starting on OAC avoids a migration later.
+
+**Why the S3 REST endpoint as the origin, not the website endpoint:**
+OAC only works with the bucket's REST endpoint. The website endpoint is treated as a custom HTTP origin, which CloudFront can't sign requests to, so using it would force the bucket to be public again. The trade-off is that S3 website features such as automatic `index.html` in subfolders aren't available; `default_root_object` covers the site root, which is all this site needs.
+
+**Why the bucket policy is scoped to one distribution's ARN:**
+Granting `s3:GetObject` to the CloudFront service principal alone would let *any* CloudFront distribution, including one in another AWS account, read the bucket. The `AWS:SourceArn` condition limits access to this distribution only, closing what is known as the confused-deputy problem.
+
+**Why all four public access block settings are enabled:**
+The bucket policy already restricts access, but the public access block is a second, independent guard. Even if someone later attaches a public ACL or a policy granting `*`, S3 rejects or ignores it. Defence in depth costs nothing here.
+
+**Why site files are uploaded with Terraform instead of `aws s3 sync`:**
+With `for_each` over `fileset()`, every file under `www/` becomes a tracked resource. Added files are uploaded, removed files are deleted from the bucket, and changed files are detected through their `etag` (an MD5 of the file). Infrastructure and content deploy in one step, with no separate script to forget. For a large site with thousands of files, a sync step in CI would scale better; at this size, one tool is simpler.
+
+**Why `content_type` is set per file extension:**
+S3 doesn't infer content types reliably for uploaded objects. Without the correct type, browsers may download a CSS file instead of applying it, or refuse to run JavaScript served as `binary/octet-stream`. Mapping each extension to its MIME type guarantees the site renders correctly.
+
+**Why a one-hour default TTL:**
+`default_ttl = 3600` balances freshness against cache hit rate. Most requests are served from the edge, keeping latency low and S3 requests few, while an unchanged deploy still shows up within an hour without intervention. When a change must appear immediately, an invalidation clears the cache.
+
+**Why CloudFront's default certificate for now:**
+The `*.cloudfront.net` certificate gives full HTTPS with no domain purchase, DNS setup, or certificate validation. It proves the architecture end to end; a custom domain with ACM and Route 53 is an additive change on the same distribution, covered in Next Steps.
 
 ## Issues Hit and Fixed During Build
 
