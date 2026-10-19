@@ -1,4 +1,4 @@
-# Static Website Hosting — S3 + CloudFront (Terraform)
+# Static Website Hosting: S3 + CloudFront (Terraform)
 
 ## Overview
 Production-pattern static site hosting on AWS: a private S3 bucket serves content exclusively through CloudFront, with public bucket access fully blocked and access restricted to CloudFront via Origin Access Control (OAC). Provisioned entirely with Terraform.
